@@ -110,37 +110,4 @@
       (println (str "[" session "] running"))
       (println (str/trim (:out result))))))
 
-(defn make-tasks
-  "Generate bb.edn task entries from a config.
 
-  Returns a map of task symbols to task definitions:
-    dev         - start the session
-    dev:stop    - stop the session
-    dev:restart - restart the session
-    dev:attach  - attach to the session
-    dev:logs    - show logs from all windows
-    dev:status  - show session status
-
-  Options:
-    :prefix - task name prefix (default: \"dev\")"
-  ([config] (make-tasks config {}))
-  ([config {:keys [prefix] :or {prefix "dev"}}]
-   (let [sym (fn [suffix] (symbol (if suffix (str prefix ":" suffix) prefix)))]
-     {(sym nil)        {:doc "Start dev tmux session"
-                        :task `(do (require '[tmux-dev.core :as td])
-                                   (td/start ~config))}
-      (sym "stop")     {:doc "Stop dev tmux session"
-                        :task `(do (require '[tmux-dev.core :as td])
-                                   (td/stop ~config))}
-      (sym "restart")  {:doc "Restart dev tmux session"
-                        :task `(do (require '[tmux-dev.core :as td])
-                                   (td/restart ~config))}
-      (sym "attach")   {:doc "Attach to dev tmux session"
-                        :task `(do (require '[tmux-dev.core :as td])
-                                   (td/attach ~config))}
-      (sym "logs")     {:doc "Show logs from dev tmux session"
-                        :task `(do (require '[tmux-dev.core :as td])
-                                   (td/logs ~config))}
-      (sym "status")   {:doc "Show dev session status"
-                        :task `(do (require '[tmux-dev.core :as td])
-                                   (td/status ~config))}})))
