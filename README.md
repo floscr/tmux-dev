@@ -88,3 +88,43 @@ All functions take the config map as first argument.
 (td/logs config {:window "frontend"})  ; single window
 (td/logs config {:lines 100})          ; more history
 ```
+
+## Environment variables
+
+`tmux-dev.env` provides helpers for reading env vars with typed fallbacks. Use these to make ports and other config overridable — this is the foundation for orchestration (e.g. auto port assignment when running multiple projects).
+
+```clojure
+(require '[tmux-dev.env :as env])
+
+(env/number "PORT_BACKEND"  3000)   ; => 3000 (or env value as long)
+(env/number "PORT_FRONTEND" 8000)   ; => 8000
+(env/string "HOST"          "localhost")
+(env/bool   "DEBUG"         false)  ; truthy: "1", "true", "yes"
+```
+
+Use in your config so ports propagate from the environment:
+
+```clojure
+{:tasks
+ {:requires ([tmux-dev.core :as td] [tmux-dev.env :as env])
+  :init (def port-fe (env/number "PORT_FRONTEND" 8000))
+  :init (def port-be (env/number "PORT_BACKEND" 3000))
+  :init (def config {:session "my-app"
+                     :windows [["backend"  (str "PORT_BACKEND=" port-be " bb backend")]
+                               ["frontend" (str "PORT_FRONTEND=" port-fe " bb frontend")]]
+                     :print   [(str "App: http://localhost:" port-fe)
+                               (str "API: http://localhost:" port-be)]})
+
+  dev         {:task (td/start config)}
+  dev:stop    {:task (td/stop config)}
+  dev:restart {:task (td/restart config)}}}
+```
+
+Then override from the shell:
+
+```
+$ PORT_FRONTEND=9000 PORT_BACKEND=4000 bb dev
+[my-app] tmux session started
+  App: http://localhost:9000
+  API: http://localhost:4000
+```
