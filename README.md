@@ -12,7 +12,7 @@ Add as a dependency in `bb.edn`:
 
 ;; git
 {:deps {tmux-dev/tmux-dev {:git/url "https://github.com/floscr/tmux-dev"
-                            :git/sha "..."}}}
+                            :git/sha "7707d5b"}}}
 ```
 
 ## Usage
