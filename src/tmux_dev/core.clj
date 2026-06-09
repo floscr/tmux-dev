@@ -67,16 +67,29 @@
       (println (str "[" session "] session already running. Use restart to recreate."))
       (System/exit 0))
     ;; Create session with first window
-    (let [[first-name first-cmd] (first windows)]
+    (let [[first-name first-cmd] (first windows)
+          target (fn [wname] (str session ":" wname))
+          send-env! (fn [wname]
+                      ;; Export each var individually to avoid long-line wrapping
+                      (doseq [[k v] env-vars]
+                        (sh "tmux" "send-keys" "-t" (target wname)
+                            (str "export " k "=" (pr-str v)) "Enter")))]
       (sh "tmux" "new-session" "-d" "-s" session "-n" first-name "-c" dir)
-      ;; Set environment variables on the session so all panes inherit them
+      ;; Also set on the session so future panes/windows inherit them
       (doseq [[k v] env-vars]
         (sh-quiet "tmux" "set-environment" "-t" session k v))
-      (sh "tmux" "send-keys" "-t" (str session ":" first-name) first-cmd "Enter"))
+      (send-env! first-name)
+      (sh "tmux" "send-keys" "-t" (target first-name) first-cmd "Enter"))
     ;; Create remaining windows
-    (doseq [[window-name cmd] (rest windows)]
-      (sh "tmux" "new-window" "-t" session "-n" window-name "-c" dir)
-      (sh "tmux" "send-keys" "-t" (str session ":" window-name) cmd "Enter"))
+    (let [target (fn [wname] (str session ":" wname))
+          send-env! (fn [wname]
+                      (doseq [[k v] env-vars]
+                        (sh "tmux" "send-keys" "-t" (target wname)
+                            (str "export " k "=" (pr-str v)) "Enter")))]
+      (doseq [[window-name cmd] (rest windows)]
+        (sh "tmux" "new-window" "-t" session "-n" window-name "-c" dir)
+        (send-env! window-name)
+        (sh "tmux" "send-keys" "-t" (target window-name) cmd "Enter")))
     (println (str "[" session "] tmux session started"))
     (when (seq print)
       (doseq [line print]
