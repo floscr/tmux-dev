@@ -1,6 +1,7 @@
 (ns tmux-dev.core
   (:require [babashka.process :as p]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [clojure.java.io :as io]))
 
 (defn- session-exists? [session-name]
   (-> (p/process ["tmux" "has-session" "-t" session-name]
@@ -17,6 +18,27 @@
   (-> (p/process (vec args) {:err :string :out :string})
       deref))
 
+(defn parse-env-file
+  "Parse a .env file into a map of {\"KEY\" \"VALUE\"}.  
+   Skips blank lines and comments (#). Returns nil if file doesn't exist.
+   
+   Example:
+     (parse-env-file \".env\")  ;=> {\"API_KEY\" \"abc123\" \"PORT\" \"8080\"}"
+  [path]
+  (let [f (io/file path)]
+    (when (.exists f)
+      (into {}
+        (for [line (str/split-lines (slurp f))
+              :let [line (str/trim line)]
+              :when (and (seq line)
+                        (not (str/starts-with? line "#"))
+                        (str/includes? line "="))
+              :let [[k v] (str/split line #"=" 2)
+                    k (str/trim k)
+                    v (str/trim (or v ""))]
+              :when (and (seq k) (seq v))]
+          [k v])))))
+
 (defn start
   "Start a tmux session with named windows.
 
@@ -24,24 +46,32 @@
     :session  - tmux session name (required)
     :windows  - vector of [name command] pairs (required)
     :dir      - working directory (default: current dir)
+    :env      - map of environment variables to set in the session (optional)
+    :env-file - path to a .env file to load (optional, merged under :env)
     :print    - vector of strings to print after start (optional)
 
   Example:
     (start {:session \"my-dev\"
             :windows [[\"frontend\" \"bb frontend\"]
                       [\"backend\"  \"bb backend\"]]
+            :env-file \".env\"
+            :env {\"EXTRA\" \"val\"}
             :print [\"App: http://localhost:8000\"
                     \"API: http://localhost:3000\"]})"
-  [{:keys [session windows dir print] :as _config}]
+  [{:keys [session windows dir env env-file print] :as _config}]
   (assert session ":session is required")
   (assert (seq windows) ":windows is required and must be non-empty")
-  (let [dir (or dir (System/getProperty "user.dir"))]
+  (let [dir (or dir (System/getProperty "user.dir"))
+        env-vars (merge (when env-file (parse-env-file env-file)) env)]
     (when (session-exists? session)
       (println (str "[" session "] session already running. Use restart to recreate."))
       (System/exit 0))
     ;; Create session with first window
     (let [[first-name first-cmd] (first windows)]
       (sh "tmux" "new-session" "-d" "-s" session "-n" first-name "-c" dir)
+      ;; Set environment variables on the session so all panes inherit them
+      (doseq [[k v] env-vars]
+        (sh-quiet "tmux" "set-environment" "-t" session k v))
       (sh "tmux" "send-keys" "-t" (str session ":" first-name) first-cmd "Enter"))
     ;; Create remaining windows
     (doseq [[window-name cmd] (rest windows)]
