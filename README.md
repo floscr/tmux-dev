@@ -128,3 +128,7 @@ $ PORT_FRONTEND=9000 PORT_BACKEND=4000 bb dev
   App: http://localhost:9000
   API: http://localhost:4000
 ```
+
+## License
+
+MIT, see [LICENSE](LICENSE).
