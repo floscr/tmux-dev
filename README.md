@@ -42,7 +42,8 @@ $ bb dev
 [my-app] tmux session started
   App: http://localhost:8000
   API: http://localhost:3000
-  Attach: tmux attach -t my-app
+  Attach with:
+tmux attach -t my-app
 
 $ bb dev:status
 [my-app] running

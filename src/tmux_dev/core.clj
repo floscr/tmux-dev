@@ -94,7 +94,9 @@
     (when (seq print)
       (doseq [line print]
         (println (str "  " line))))
-    (println (str "  Attach: tmux attach -t " session))))
+    ;; The command sits alone on its line so a copied line runs as-is.
+    (println "  Attach with:")
+    (println (str "tmux attach -t " session))))
 
 (defn stop
   "Kill the tmux session."
