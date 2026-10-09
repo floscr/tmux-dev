@@ -77,11 +77,13 @@ All functions take the config map as first argument.
 | Function    | Description                                    |
 |-------------|------------------------------------------------|
 | `start`     | Create session with windows. No-op if running  |
-| `stop`      | Kill the session                               |
+| `stop`      | Kill the session and every process its panes started (TERM, then KILL after 10s) |
 | `restart`   | Kill + start                                   |
 | `attach`    | Attach to the session (interactive)            |
 | `logs`      | Capture recent pane output from all windows    |
 | `status`    | Show running state and window list             |
+
+Session names are matched exactly: stopping `app` never touches `app-demo`.
 
 `logs` takes an optional second map:
 

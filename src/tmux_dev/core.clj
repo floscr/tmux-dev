@@ -3,8 +3,16 @@
             [clojure.string :as str]
             [clojure.java.io :as io]))
 
+;; tmux prefix-matches a bare `-t name` (`-t app` hits `app-demo` once `app`
+;; is gone); `=` makes every session target an exact match.
+(defn- exact [session]
+  (str "=" session))
+
+(defn- window-target [session window-name]
+  (str (exact session) ":" window-name))
+
 (defn- session-exists? [session-name]
-  (-> (p/process ["tmux" "has-session" "-t" session-name]
+  (-> (p/process ["tmux" "has-session" "-t" (exact session-name)]
                  {:err :string :out :string})
       deref
       :exit
@@ -68,7 +76,7 @@
       (System/exit 0))
     ;; Create session with first window
     (let [[first-name first-cmd] (first windows)
-          target (fn [wname] (str session ":" wname))
+          target (fn [wname] (window-target session wname))
           send-env! (fn [wname]
                       ;; Export each var individually to avoid long-line wrapping
                       (doseq [[k v] env-vars]
@@ -77,17 +85,17 @@
       (sh "tmux" "new-session" "-d" "-s" session "-n" first-name "-c" dir)
       ;; Also set on the session so future panes/windows inherit them
       (doseq [[k v] env-vars]
-        (sh-quiet "tmux" "set-environment" "-t" session k v))
+        (sh-quiet "tmux" "set-environment" "-t" (exact session) k v))
       (send-env! first-name)
       (sh "tmux" "send-keys" "-t" (target first-name) first-cmd "Enter"))
     ;; Create remaining windows
-    (let [target (fn [wname] (str session ":" wname))
+    (let [target (fn [wname] (window-target session wname))
           send-env! (fn [wname]
                       (doseq [[k v] env-vars]
                         (sh "tmux" "send-keys" "-t" (target wname)
                             (str "export " k "=" (pr-str v)) "Enter")))]
       (doseq [[window-name cmd] (rest windows)]
-        (sh "tmux" "new-window" "-t" session "-n" window-name "-c" dir)
+        (sh "tmux" "new-window" "-t" (str (exact session) ":") "-n" window-name "-c" dir)
         (send-env! window-name)
         (sh "tmux" "send-keys" "-t" (target window-name) cmd "Enter")))
     (println (str "[" session "] tmux session started"))
@@ -98,12 +106,38 @@
     (println "  Attach with:")
     (println (str "tmux attach -t " session))))
 
+(defn- pane-pids [session]
+  (->> (sh-quiet "tmux" "list-panes" "-s" "-t" (exact session) "-F" "#{pane_pid}")
+       :out
+       str/split-lines
+       (remove str/blank?)))
+
+;; The pane shell leads its process session (pid = sid) and, if interactive,
+;; ignores TERM, so only the processes it started count.
+(defn- session-children-alive? [sid]
+  (->> (sh-quiet "pgrep" "-s" sid) :out str/split-lines
+       (some #(and (not (str/blank? %)) (not= sid (str/trim %))))))
+
+;; kill-session only SIGHUPs each pane's shell; children that ignore it
+;; (npm → node → java chains) reparent to init and keep their ports. Every
+;; pane is its own process session, so signal the whole session instead:
+;; TERM, up to 10s for graceful shutdown, then KILL.
+(defn- kill-pane-processes! [session]
+  (let [sids (pane-pids session)]
+    (doseq [sid sids] (sh-quiet "pkill" "-TERM" "-s" sid))
+    (loop [n 0]
+      (when (and (< n 40) (some session-children-alive? sids))
+        (Thread/sleep 250)
+        (recur (inc n))))
+    (doseq [sid sids] (sh-quiet "pkill" "-KILL" "-s" sid))))
+
 (defn stop
-  "Kill the tmux session."
+  "Kill the tmux session and every process started in its panes."
   [{:keys [session]}]
   (assert session ":session is required")
   (if (session-exists? session)
-    (do (sh-quiet "tmux" "kill-session" "-t" session)
+    (do (kill-pane-processes! session)
+        (sh-quiet "tmux" "kill-session" "-t" (exact session))
         (println (str "[" session "] stopped")))
     (println (str "[" session "] not running"))))
 
@@ -119,7 +153,7 @@
   [{:keys [session]}]
   (assert session ":session is required")
   (if (session-exists? session)
-    (sh "tmux" "attach" "-t" session)
+    (sh "tmux" "attach" "-t" (exact session))
     (println (str "[" session "] not running"))))
 
 (defn logs
@@ -138,7 +172,7 @@
                             windows)]
        (doseq [[window-name _] target-windows]
          (println (str "── " window-name " ──"))
-         (let [result @(p/process ["tmux" "capture-pane" "-t" (str session ":" window-name)
+         (let [result @(p/process ["tmux" "capture-pane" "-t" (window-target session window-name)
                                    "-p" "-S" (str "-" lines)]
                                   {:out :string :err :string})]
            (println (str/trim (:out result))))
@@ -150,7 +184,7 @@
   (assert session ":session is required")
   (if-not (session-exists? session)
     (println (str "[" session "] not running"))
-    (let [result @(p/process ["tmux" "list-windows" "-t" session "-F" "#{window_name}: #{pane_current_command}"]
+    (let [result @(p/process ["tmux" "list-windows" "-t" (exact session) "-F" "#{window_name}: #{pane_current_command}"]
                              {:out :string :err :string})]
       (println (str "[" session "] running"))
       (println (str/trim (:out result))))))
